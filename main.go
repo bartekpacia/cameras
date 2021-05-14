@@ -7,7 +7,7 @@ import (
 	"os"
 
 	"github.com/joho/godotenv"
-	"gocv.io/x/gocv"
+	cv "gocv.io/x/gocv"
 )
 
 var (
@@ -36,12 +36,12 @@ func init() {
 func main() {
 	flag.Parse()
 	url := fmt.Sprintf("rtsp://%s:%s@%s:%s/mode=real&idc=%d&ids=1", user, password, address, port, idc)
-	capture, err := gocv.OpenVideoCapture(url)
+	capture, err := cv.OpenVideoCapture(url)
 	if err != nil {
 		log.Fatalln("failed to open video capture:", err)
 	}
-	window := gocv.NewWindow("video capture " + fmt.Sprint(idc))
-	img := gocv.NewMat()
+	window := cv.NewWindow("video capture " + fmt.Sprint(idc))
+	img := cv.NewMat()
 
 	for {
 		capture.Read(&img)
