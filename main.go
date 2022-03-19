@@ -17,13 +17,15 @@ var (
 	address  string
 	port     string
 
-	idc      int
-	tracking bool
+	idc       int
+	videoFile string
+	tracking  bool
 )
 
 func init() {
 	log.SetFlags(0)
 	flag.IntVar(&idc, "idc", 1, "camera number")
+	flag.StringVar(&videoFile, "file", "", "video file to read from instead of RTSP")
 	flag.BoolVar(&tracking, "tracking", false, "whether to track human movement")
 
 	err := godotenv.Load()
@@ -40,8 +42,15 @@ func init() {
 func main() {
 	flag.Parse()
 
-	url := fmt.Sprintf("rtsp://%s:%s@%s:%s/mode=real&idc=%d&ids=1", user, password, address, port, idc)
-	capture, err := cv.OpenVideoCapture(url)
+	var capture *cv.VideoCapture
+	var err error
+	if videoFile != "" {
+		capture, err = cv.OpenVideoCapture(videoFile)
+	} else {
+		url := fmt.Sprintf("rtsp://%s:%s@%s:%s/mode=real&idc=%d&ids=1", user, password, address, port, idc)
+		capture, err = cv.OpenVideoCapture(url)
+	}
+
 	if err != nil {
 		log.Fatalln("failed to open video capture:", err)
 	}
