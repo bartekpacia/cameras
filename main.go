@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"time"
 
 	"github.com/joho/godotenv"
 	cv "gocv.io/x/gocv"
@@ -69,7 +70,11 @@ func main() {
 		if err != nil {
 			log.Fatalln("failed to write a frame to VideoWriter")
 		}
+		now := time.Now()
 
-		fmt.Printf("new frame: type: %s, bytes: %s\n", img.Type(), lenReadable(len(img.ToBytes()), 2))
+		t := fmt.Sprintf("%d:%d:%d", now.Hour(), now.Second(), now.Nanosecond())
+		size := lenReadable(len(img.ToBytes()), 2)
+
+		fmt.Printf("%s new frame: type: %s, bytes: %s\n", t, img.Type(), size)
 	}
 }
