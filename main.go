@@ -93,8 +93,9 @@ func main() {
 			t = fmt.Sprintf("%02d:%02d:%02d", now.Hour(), now.Minute(), now.Second())
 		}
 
+		xy := fmt.Sprintf("%dx%d", img.Rows(), img.Cols())
 		size := lenReadable(len(img.ToBytes()), 2)
 
-		fmt.Printf("%s new frame (type: %s, bytes: %s)\n", t, img.Type(), size)
+		fmt.Printf("%s new frame (%s, %s, %s)\n", t, img.Type(), xy, size)
 	}
 }
