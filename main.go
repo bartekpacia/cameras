@@ -7,6 +7,7 @@ import (
 	"os"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/joho/godotenv"
 	cv "gocv.io/x/gocv"
 )
@@ -64,7 +65,7 @@ func main() {
 		log.Fatalln("failed to read a frame from video capture to matrix")
 	}
 
-	filename := fmt.Sprintf("cam_%d.mkv", idc)
+	filename := fmt.Sprintf("idc%d_%s.mkv", idc, uuid.New())
 	videoWriter, err := cv.VideoWriterFile(filename, "X264", 10, img.Cols(), img.Rows(), true)
 	if err != nil {
 		log.Fatalln("failed to create VideoWriter:", err)
