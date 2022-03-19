@@ -3,6 +3,7 @@ package main
 import (
 	"flag"
 	"fmt"
+	"image"
 	"log"
 	"os"
 	"time"
@@ -77,7 +78,14 @@ func main() {
 			log.Fatalln("failed to read a frame from video capture to matrix")
 		}
 
-		window.IMShow(img)
+		// window.IMShow(img)
+		// window.WaitKey(1)
+		gray1 := cv.NewMat()
+		cv.CvtColor(img, &gray1, cv.ColorRGBAToGray)
+		gray2 := cv.NewMat()
+		cv.GaussianBlur(gray1, &gray2, image.Point{}, 100, 100, cv.BorderTransparent)
+
+		window.IMShow(gray2)
 		window.WaitKey(1)
 
 		err = videoWriter.Write(img)
