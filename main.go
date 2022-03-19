@@ -16,12 +16,15 @@ var (
 	password string
 	address  string
 	port     string
+
 	idc      int
+	tracking bool
 )
 
 func init() {
 	log.SetFlags(0)
 	flag.IntVar(&idc, "idc", 1, "camera number")
+	flag.BoolVar(&tracking, "tracking", false, "whether to track human movement")
 
 	err := godotenv.Load()
 	if err != nil {
