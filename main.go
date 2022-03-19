@@ -45,6 +45,7 @@ func main() {
 	var capture *cv.VideoCapture
 	var err error
 	if videoFile != "" {
+		fmt.Println("opening from video file")
 		capture, err = cv.OpenVideoCapture(videoFile)
 	} else {
 		url := fmt.Sprintf("rtsp://%s:%s@%s:%s/mode=real&idc=%d&ids=1", user, password, address, port, idc)
@@ -82,11 +83,17 @@ func main() {
 		if err != nil {
 			log.Fatalln("failed to write a frame to VideoWriter")
 		}
-		now := time.Now()
 
-		t := fmt.Sprintf("%d:%d:%d", now.Hour(), now.Second(), now.Nanosecond())
+		var t string
+		if videoFile != "" {
+			t = ""
+		} else {
+			now := time.Now()
+			t = fmt.Sprintf("%02d:%02d:%02d", now.Hour(), now.Minute(), now.Second())
+		}
+
 		size := lenReadable(len(img.ToBytes()), 2)
 
-		fmt.Printf("%s new frame: type: %s, bytes: %s\n", t, img.Type(), size)
+		fmt.Printf("%s new frame (type: %s, bytes: %s)\n", t, img.Type(), size)
 	}
 }
