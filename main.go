@@ -1,10 +1,12 @@
 package main
 
 import (
+	"errors"
 	"flag"
 	"fmt"
 	"log"
 	"os"
+	"path/filepath"
 	"time"
 
 	"github.com/google/uuid"
@@ -40,6 +42,26 @@ func init() {
 	port = os.Getenv("PORT")
 }
 
+func createVideoWriter(img *cv.Mat, idc int) (*cv.VideoWriter, error) {
+	dir, err := os.Getwd()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get working dir: %w", err)
+	}
+	dirPath := filepath.Join(dir, "recordings")
+
+	if _, err := os.Stat(dirPath); errors.Is(err, os.ErrNotExist) {
+		if err := os.Mkdir(dirPath, os.ModePerm); err != nil {
+			return nil, fmt.Errorf("failed to create recordings dir: %v", err)
+		}
+	}
+
+	fileName := fmt.Sprintf("idc%d_%s.mkv", idc, uuid.New())
+	fullPath := filepath.Join(dirPath, fileName)
+
+	videoWriter, err := cv.VideoWriterFile(fullPath, "X264", 15, img.Cols(), img.Rows(), true)
+	return videoWriter, err
+}
+
 func main() {
 	flag.Parse()
 
@@ -65,10 +87,9 @@ func main() {
 		log.Fatalln("failed to read a frame from video capture to matrix")
 	}
 
-	filename := fmt.Sprintf("idc%d_%s.mkv", idc, uuid.New())
-	videoWriter, err := cv.VideoWriterFile(filename, "X264", 10, img.Cols(), img.Rows(), true)
+	videoWriter, err := createVideoWriter(&img, idc)
 	if err != nil {
-		log.Fatalln("failed to create VideoWriter:", err)
+		log.Fatalln("failed to create video writer:", err)
 	}
 	defer videoWriter.Close()
 
