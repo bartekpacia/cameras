@@ -1,12 +1,15 @@
 package main
 
 import (
+	"errors"
 	"flag"
 	"fmt"
 	"log"
 	"os"
+	"path/filepath"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/joho/godotenv"
 	cv "gocv.io/x/gocv"
 )
@@ -16,12 +19,17 @@ var (
 	password string
 	address  string
 	port     string
-	idc      int
+
+	idc       int
+	videoFile string
+	tracking  bool
 )
 
 func init() {
 	log.SetFlags(0)
 	flag.IntVar(&idc, "idc", 1, "camera number")
+	flag.StringVar(&videoFile, "file", "", "video file to read from instead of RTSP")
+	flag.BoolVar(&tracking, "tracking", false, "whether to track human movement")
 
 	err := godotenv.Load()
 	if err != nil {
@@ -34,11 +42,39 @@ func init() {
 	port = os.Getenv("PORT")
 }
 
+func createVideoWriter(img *cv.Mat, idc int) (*cv.VideoWriter, error) {
+	dir, err := os.Getwd()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get working dir: %w", err)
+	}
+	dirPath := filepath.Join(dir, "recordings")
+
+	if _, err := os.Stat(dirPath); errors.Is(err, os.ErrNotExist) {
+		if err := os.Mkdir(dirPath, os.ModePerm); err != nil {
+			return nil, fmt.Errorf("failed to create recordings dir: %v", err)
+		}
+	}
+
+	fileName := fmt.Sprintf("idc%d_%s.mkv", idc, uuid.New())
+	fullPath := filepath.Join(dirPath, fileName)
+
+	videoWriter, err := cv.VideoWriterFile(fullPath, "X264", 15, img.Cols(), img.Rows(), true)
+	return videoWriter, err
+}
+
 func main() {
 	flag.Parse()
 
-	url := fmt.Sprintf("rtsp://%s:%s@%s:%s/mode=real&idc=%d&ids=1", user, password, address, port, idc)
-	capture, err := cv.OpenVideoCapture(url)
+	var capture *cv.VideoCapture
+	var err error
+	if videoFile != "" {
+		fmt.Println("opening from video file")
+		capture, err = cv.OpenVideoCapture(videoFile)
+	} else {
+		url := fmt.Sprintf("rtsp://%s:%s@%s:%s/mode=real&idc=%d&ids=1", user, password, address, port, idc)
+		capture, err = cv.OpenVideoCapture(url)
+	}
+
 	if err != nil {
 		log.Fatalln("failed to open video capture:", err)
 	}
@@ -51,10 +87,9 @@ func main() {
 		log.Fatalln("failed to read a frame from video capture to matrix")
 	}
 
-	filename := fmt.Sprintf("cam_%d.mkv", idc)
-	videoWriter, err := cv.VideoWriterFile(filename, "X264", 10, img.Cols(), img.Rows(), true)
+	videoWriter, err := createVideoWriter(&img, idc)
 	if err != nil {
-		log.Fatalln("failed to create VideoWriter:", err)
+		log.Fatalln("failed to create video writer:", err)
 	}
 	defer videoWriter.Close()
 
@@ -70,11 +105,18 @@ func main() {
 		if err != nil {
 			log.Fatalln("failed to write a frame to VideoWriter")
 		}
-		now := time.Now()
 
-		t := fmt.Sprintf("%d:%d:%d", now.Hour(), now.Second(), now.Nanosecond())
+		var t string
+		if videoFile != "" {
+			t = ""
+		} else {
+			now := time.Now()
+			t = fmt.Sprintf("%02d:%02d:%02d", now.Hour(), now.Minute(), now.Second())
+		}
+
+		xy := fmt.Sprintf("%dx%d", img.Rows(), img.Cols())
 		size := lenReadable(len(img.ToBytes()), 2)
 
-		fmt.Printf("%s new frame: type: %s, bytes: %s\n", t, img.Type(), size)
+		fmt.Printf("%s new frame (%s, %s, %s)\n", t, img.Type(), xy, size)
 	}
 }
