@@ -10,7 +10,6 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/joho/godotenv"
 	cv "gocv.io/x/gocv"
 )
 
@@ -31,35 +30,25 @@ func init() {
 	flag.StringVar(&videoFile, "file", "", "video file to read from instead of RTSP")
 	flag.BoolVar(&tracking, "tracking", false, "whether to track human movement")
 
-	err := godotenv.Load()
-	if err != nil {
-		log.Fatalln("failed to load environment variables")
-	}
-
 	user = os.Getenv("USER")
+	if user == "" {
+		log.Fatalln("USER is empty")
+	}
+
 	password = os.Getenv("PASSWORD")
+	if password == "" {
+		log.Fatalln("PASSWORD is empty")
+	}
+
 	address = os.Getenv("ADDRESS")
+	if address == "" {
+		log.Fatalln("ADDRESS is empty")
+	}
+
 	port = os.Getenv("PORT")
-}
-
-func createVideoWriter(img *cv.Mat, idc int) (*cv.VideoWriter, error) {
-	dir, err := os.Getwd()
-	if err != nil {
-		return nil, fmt.Errorf("failed to get working dir: %w", err)
+	if port == "" {
+		log.Fatalln("PORT is empty")
 	}
-	dirPath := filepath.Join(dir, "recordings")
-
-	if _, err := os.Stat(dirPath); errors.Is(err, os.ErrNotExist) {
-		if err := os.Mkdir(dirPath, os.ModePerm); err != nil {
-			return nil, fmt.Errorf("failed to create recordings dir: %v", err)
-		}
-	}
-
-	fileName := fmt.Sprintf("idc%d_%s.mkv", idc, uuid.New())
-	fullPath := filepath.Join(dirPath, fileName)
-
-	videoWriter, err := cv.VideoWriterFile(fullPath, "X264", 15, img.Cols(), img.Rows(), true)
-	return videoWriter, err
 }
 
 func main() {
@@ -119,4 +108,24 @@ func main() {
 
 		fmt.Printf("%s new frame (%s, %s, %s)\n", t, img.Type(), xy, size)
 	}
+}
+
+func createVideoWriter(img *cv.Mat, idc int) (*cv.VideoWriter, error) {
+	dir, err := os.Getwd()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get working dir: %w", err)
+	}
+	dirPath := filepath.Join(dir, "recordings")
+
+	if _, err := os.Stat(dirPath); errors.Is(err, os.ErrNotExist) {
+		if err := os.Mkdir(dirPath, os.ModePerm); err != nil {
+			return nil, fmt.Errorf("failed to create recordings dir: %v", err)
+		}
+	}
+
+	fileName := fmt.Sprintf("idc%d_%s.mkv", idc, uuid.New())
+	fullPath := filepath.Join(dirPath, fileName)
+
+	videoWriter, err := cv.VideoWriterFile(fullPath, "X264", 15, img.Cols(), img.Rows(), true)
+	return videoWriter, err
 }
