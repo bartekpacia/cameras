@@ -30,24 +30,24 @@ func init() {
 	flag.StringVar(&videoFile, "file", "", "video file to read from instead of RTSP")
 	flag.BoolVar(&tracking, "tracking", false, "whether to track human movement")
 
-	user = os.Getenv("USER")
+	user = os.Getenv("DVR_USER")
 	if user == "" {
-		log.Fatalln("USER is empty")
+		log.Fatalln("DVR_USER is empty")
 	}
 
-	password = os.Getenv("PASSWORD")
+	password = os.Getenv("DVR_PASSWORD")
 	if password == "" {
-		log.Fatalln("PASSWORD is empty")
+		log.Fatalln("DVR_PASSWORD is empty")
 	}
 
-	address = os.Getenv("ADDRESS")
+	address = os.Getenv("DVR_ADDRESS")
 	if address == "" {
-		log.Fatalln("ADDRESS is empty")
+		log.Fatalln("DVR_ADDRESS is empty")
 	}
 
-	port = os.Getenv("PORT")
+	port = os.Getenv("DVR_PORT")
 	if port == "" {
-		log.Fatalln("PORT is empty")
+		log.Fatalln("DVR_PORT is empty")
 	}
 }
 

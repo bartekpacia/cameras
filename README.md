@@ -4,10 +4,10 @@ Go program using OpenCV to connect to RTSP-enabled camera.
 
 ### env configuration
 
-USER - self-explanatory
+DVR_USER - self-explanatory
 
-PASSWORD - self-explanatory
+DVR_PASSWORD - self-explanatory
 
-ADDRESS - IP address of the Digital Video Recorder (DVR) device
+DVR_ADDRESS - IP address of the Digital Video Recorder (DVR) device
 
-PORT - usually 554
+DVR_PORT - usually 554
