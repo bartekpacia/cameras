@@ -104,9 +104,8 @@ func main() {
 		}
 
 		xy := fmt.Sprintf("%dx%d", img.Rows(), img.Cols())
-		size := lenReadable(len(img.ToBytes()), 2)
 
-		fmt.Printf("%s new frame (%s, %s, %s)\n", t, img.Type(), xy, size)
+		fmt.Printf("%s new frame (%s, %s)\n", t, img.Type(), xy)
 	}
 }
 
