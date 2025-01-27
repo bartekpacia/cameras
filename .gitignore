@@ -6,4 +6,6 @@
 .env
 *.avi
 *.mkv
-recordings
+/recordings/
+
+/yolo/

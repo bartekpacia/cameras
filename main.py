@@ -4,6 +4,7 @@ import argparse
 import uuid
 import time
 from pathlib import Path
+import numpy as np
 
 def parse_args():
     parser = argparse.ArgumentParser()
@@ -35,6 +36,13 @@ def main():
     args = parse_args()
     env_vars = check_env_vars()
     
+    # Add YOLO initialization
+    net = cv2.dnn.readNet("yolo/yolov3.weights", "yolo/yolov3.cfg")
+    layer_names = net.getLayerNames()
+    output_layers = [layer_names[i - 1] for i in net.getUnconnectedOutLayers()]
+    with open("yolo/coco.names", "r") as f:
+        classes = f.read().strip().split("\n")
+    
     if args.file:
         print("opening from video file")
         capture = cv2.VideoCapture(args.file)
@@ -59,12 +67,50 @@ def main():
             ret, frame = capture.read()
             if not ret:
                 break
+
+            video_writer.write(frame)
+
+            # Perform object detection using YOLO
+            height, width = frame.shape[:2]
+            blob = cv2.dnn.blobFromImage(image=frame, scalefactor=1/255.0, size=(416, 416), swapRB=True, crop=False)
+            net.setInput(blob)
+            layer_outputs = net.forward(output_layers)
+
+            boxes = []
+            confidences = []
+            class_ids = []
+
+            for output in layer_outputs:
+                for detection in output:
+                    scores = detection[5:]
+                    class_id = np.argmax(scores)
+                    confidence = scores[class_id]
+
+                    if confidence > 0.5:
+                        center_x = int(detection[0] * width)
+                        center_y = int(detection[1] * height)
+                        w = int(detection[2] * width)
+                        h = int(detection[3] * height)
+
+                        x = int(center_x - w/2)
+                        y = int(center_y - h/2)
+
+                        boxes.append([x, y, w, h])
+                        confidences.append(float(confidence))
+                        class_ids.append(class_id)
+
+            indexes = cv2.dnn.NMSBoxes(boxes, confidences, score_threshold=0.5, nms_threshold=0.4)
+
+            for i in range(len(boxes)):
+                if i in indexes:
+                    x, y, w, h = boxes[i]
+                    label = str(classes[class_ids[i]])
+                    cv2.rectangle(frame, (x, y), (x + w, y + h), (0, 255, 0), 2)
+                    cv2.putText(frame, label, (x, y - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 2)
             
             cv2.imshow(window_name, frame)
             if cv2.waitKey(1) & 0xFF == ord('q'):  # Add 'q' to quit
                 break
-            
-            video_writer.write(frame)
             
             timestamp = ''
             if not args.file:
