@@ -43,6 +43,7 @@ def main():
         capture = cv2.VideoCapture(args.file)
     else:
         url = f"rtsp://{env_vars['user']}:{env_vars['password']}@{env_vars['address']}:{env_vars['port']}/mode=real&idc={args.idc}&ids=1"
+        print(f"opening from RTSP: {url}")
         capture = cv2.VideoCapture(url)
     
     if not capture.isOpened():
