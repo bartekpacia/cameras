@@ -54,26 +54,36 @@ func init() {
 func main() {
 	flag.Parse()
 
-	var capture *cv.VideoCapture
-	var err error
-	if videoFile != "" {
-		fmt.Println("opening from video file")
-		capture, err = cv.OpenVideoCapture(videoFile)
-	} else {
-		url := fmt.Sprintf("rtsp://%s:%s@%s:%s/mode=real&idc=%d&ids=1", user, password, address, port, idc)
-		capture, err = cv.OpenVideoCapture(url)
-	}
-
+	capture, err := openCapture()
 	if err != nil {
-		log.Fatalln("failed to open video capture:", err)
+		if videoFile != "" {
+			log.Fatalln("failed to open video capture:", err)
+		}
+		log.Println("initial connection failed:", err)
+		capture = reconnect()
 	}
 	window := cv.NewWindow("video capture " + fmt.Sprint(idc))
+
+	var detector *Detector
+	if tracking {
+		detector, err = NewDetector("models/yolov4-tiny.weights", "models/yolov4-tiny.cfg", "models/coco.names")
+		if err != nil {
+			log.Fatalln("failed to load detector:", err)
+		}
+		defer detector.Close()
+	}
 
 	img := cv.NewMat()
 	defer img.Close()
 
 	if ok := capture.Read(&img); !ok {
-		log.Fatalln("failed to read a frame from video capture to matrix")
+		if videoFile != "" {
+			log.Fatalln("failed to read a frame from video capture to matrix")
+		}
+		capture = reconnect()
+		if ok := capture.Read(&img); !ok {
+			log.Fatalln("failed to read a frame right after reconnecting")
+		}
 	}
 
 	videoWriter, err := createVideoWriter(&img, idc)
@@ -84,7 +94,18 @@ func main() {
 
 	for {
 		if ok := capture.Read(&img); !ok {
-			log.Fatalln("failed to read a frame from video capture to matrix")
+			if videoFile != "" {
+				log.Fatalln("failed to read a frame from video capture to matrix")
+			}
+			log.Println("lost connection to camera, reconnecting...")
+			capture = reconnect()
+			continue
+		}
+
+		var detectionInfo string
+		if detector != nil {
+			persons, cars := detector.Detect(&img)
+			detectionInfo = fmt.Sprintf(", persons=%d cars=%d", persons, cars)
 		}
 
 		window.IMShow(img)
@@ -105,7 +126,43 @@ func main() {
 
 		xy := fmt.Sprintf("%dx%d", img.Rows(), img.Cols())
 
-		fmt.Printf("%s new frame (%s, %s)\n", t, img.Type(), xy)
+		fmt.Printf("%s new frame (%s, %s)%s\n", t, img.Type(), xy, detectionInfo)
+	}
+}
+
+func openCapture() (*cv.VideoCapture, error) {
+	if videoFile != "" {
+		fmt.Println("opening from video file")
+		return cv.OpenVideoCapture(videoFile)
+	}
+	url := fmt.Sprintf("rtsp://%s:%s@%s:%s/mode=real&idc=%d&ids=1", user, password, address, port, idc)
+	return cv.OpenVideoCapture(url)
+}
+
+// reconnect blocks, retrying with exponential backoff (capped at 30s), until
+// the RTSP stream is reachable again and yielding an actual frame. Only
+// meant for the live RTSP path: a -file input has no "reconnect", it just
+// runs out of frames.
+func reconnect() *cv.VideoCapture {
+	backoff := 2 * time.Second
+	for {
+		capture, err := openCapture()
+		if err == nil {
+			probe := cv.NewMat()
+			ok := capture.Read(&probe)
+			probe.Close()
+			if ok {
+				log.Printf("reconnected to camera idc=%d\n", idc)
+				return capture
+			}
+		}
+		capture.Close()
+
+		log.Printf("camera idc=%d unreachable, retrying in %s\n", idc, backoff)
+		time.Sleep(backoff)
+		if backoff < 30*time.Second {
+			backoff *= 2
+		}
 	}
 }
 
