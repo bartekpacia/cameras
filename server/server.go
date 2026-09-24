@@ -42,7 +42,6 @@ type Config struct {
 // Server serves the REST API. A zero Server is not usable; call New.
 type Server struct {
 	cfg Config
-	dvr protocol.Client
 	log *slog.Logger
 
 	// mu serializes recorder sessions. A session can claim one file.
@@ -60,14 +59,9 @@ func New(cfg Config, log *slog.Logger) (*Server, error) {
 	if log == nil {
 		log = slog.Default()
 	}
-	return &Server{
-		cfg: cfg,
-		dvr: protocol.Client{Addr: cfg.Addr},
-		log: log,
-	}, nil
+	return &Server{cfg: cfg, log: log}, nil
 }
 
-// Handler is the REST API.
 func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", s.healthz)
@@ -98,7 +92,7 @@ func (s *Server) list(w http.ResponseWriter, r *http.Request) {
 
 	ctx, cancel := context.WithTimeout(r.Context(), 20*time.Second)
 	defer cancel()
-	sess, err := s.dvr.Login(ctx, s.cfg.User, s.cfg.Password)
+	sess, err := (protocol.Client{Addr: s.cfg.Addr}).Login(ctx, s.cfg.User, s.cfg.Password)
 	if err != nil {
 		s.log.Error("login", "op", "list", "err", err)
 		writeErr(w, http.StatusBadGateway, err)
@@ -140,15 +134,23 @@ func (s *Server) video(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	path, err := s.fetchMP4(r.Context(), id)
+	h264Path, err := s.pull(r.Context(), id)
 	if err != nil {
 		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
 			return
 		}
 		s.log.Error("download", "id", id, "err", err)
+		writeErr(w, http.StatusBadGateway, err)
+		return
+	}
+	defer os.Remove(h264Path)
+
+	path, err := remux(r.Context(), h264Path)
+	if err != nil {
+		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+			return
+		}
+		s.log.Error("remux", "id", id, "err", err)
 		writeErr(w, http.StatusBadGateway, err)
 		return
 	}
@@ -171,19 +173,22 @@ func (s *Server) video(w http.ResponseWriter, r *http.Request) {
 	http.ServeContent(w, r, name, st.ModTime(), f)
 }
 
-// fetchMP4 logs in, saves the Annex B stream, and remuxes it to a temp MP4.
-// The caller deletes the returned path.
-func (s *Server) fetchMP4(ctx context.Context, id string) (string, error) {
+// pull logs in and writes the Annex B stream. The caller deletes the path.
+// The recorder lock is held only for this step, not for remux or the HTTP send.
+func (s *Server) pull(ctx context.Context, id string) (string, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
 	h264, err := os.CreateTemp("", "dvr-*.h264")
 	if err != nil {
 		return "", err
 	}
-	h264Name := h264.Name()
-	defer os.Remove(h264Name)
+	name := h264.Name()
 
-	sess, err := s.dvr.Login(ctx, s.cfg.User, s.cfg.Password)
+	sess, err := (protocol.Client{Addr: s.cfg.Addr}).Login(ctx, s.cfg.User, s.cfg.Password)
 	if err != nil {
 		h264.Close()
+		os.Remove(name)
 		return "", err
 	}
 	defer sess.Close()
@@ -191,12 +196,17 @@ func (s *Server) fetchMP4(ctx context.Context, id string) (string, error) {
 	dlErr := sess.Download(ctx, id, h264)
 	closeErr := h264.Close()
 	if dlErr != nil {
+		os.Remove(name)
 		return "", dlErr
 	}
 	if closeErr != nil {
+		os.Remove(name)
 		return "", closeErr
 	}
+	return name, nil
+}
 
+func remux(ctx context.Context, h264Name string) (string, error) {
 	mp4, err := os.CreateTemp("", "dvr-*.mp4")
 	if err != nil {
 		return "", err
@@ -207,12 +217,7 @@ func (s *Server) fetchMP4(ctx context.Context, id string) (string, error) {
 		return "", err
 	}
 
-	cmd := exec.CommandContext(ctx, "ffmpeg",
-		"-y", "-v", "error",
-		"-i", h264Name,
-		"-c", "copy",
-		mp4Name,
-	)
+	cmd := exec.CommandContext(ctx, "ffmpeg", "-y", "-v", "error", "-i", h264Name, "-c", "copy", mp4Name)
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
 	if err := cmd.Run(); err != nil {
@@ -282,14 +287,14 @@ func timeRange(r *http.Request) (time.Time, time.Time, error) {
 		if err != nil {
 			return time.Time{}, time.Time{}, errors.New("date must be YYYY-MM-DD")
 		}
-		return day, day.Add(24*time.Hour - time.Second), nil
+		return day, endOfLocalDay(day), nil
 	}
 	from := q.Get("from")
 	to := q.Get("to")
 	if from == "" && to == "" {
 		now := time.Now()
 		day := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, time.Local)
-		return day, day.Add(24*time.Hour - time.Second), nil
+		return day, endOfLocalDay(day), nil
 	}
 	if from == "" || to == "" {
 		return time.Time{}, time.Time{}, errors.New("from and to must be set together")
@@ -320,7 +325,11 @@ func parseTimestamp(s string, endOfDay bool) (time.Time, error) {
 		return time.Time{}, errors.New("must be RFC3339, YYYY-MM-DDTHH:MM:SS, or YYYY-MM-DD")
 	}
 	if endOfDay {
-		return day.Add(24*time.Hour - time.Second), nil
+		return endOfLocalDay(day), nil
 	}
 	return day, nil
+}
+
+func endOfLocalDay(day time.Time) time.Time {
+	return day.Add(24*time.Hour - time.Second)
 }

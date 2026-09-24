@@ -12,9 +12,8 @@ import (
 	"time"
 )
 
-// Client dials one recorder.
+// Client dials a recorder. Addr is host:port; the control port is 5801.
 type Client struct {
-	// Addr is host:port. The control port is 5801.
 	Addr string
 }
 
@@ -25,14 +24,10 @@ type Client struct {
 type Session struct {
 	addr   string
 	handle uint32
-	device string
 
 	conn net.Conn
 	stop func() bool // stops the context.AfterFunc that closes conn
 }
-
-// Device is the model string from the login response, such as "DVR-9804@C0023".
-func (s *Session) Device() string { return s.device }
 
 // Close releases the login connection. It is safe to call more than once.
 func (s *Session) Close() error {
@@ -50,7 +45,7 @@ func (s *Session) Close() error {
 
 // Login says hello, answers the challenge, and returns a session.
 // The caller must Close the session.
-func (c *Client) Login(ctx context.Context, user, password string) (*Session, error) {
+func (c Client) Login(ctx context.Context, user, password string) (*Session, error) {
 	if user == "" || password == "" {
 		return nil, &Error{Op: "login", Err: errors.New("user and password are required")}
 	}
@@ -103,7 +98,6 @@ func (c *Client) Login(ctx context.Context, user, password string) (*Session, er
 		return nil, &Error{Op: "login", Err: errors.New("login response has no handle")}
 	}
 	sess.handle = binary.LittleEndian.Uint32(loginResp[offHandle:])
-	sess.device = cString(loginResp, offDevice)
 
 	keep := make([]byte, 32)
 	for i := range keep {
@@ -264,19 +258,12 @@ func (s *Session) Download(ctx context.Context, id string, w io.Writer) error {
 
 func endOrErr(ctx context.Context, started bool, op string, err error) error {
 	if ctx.Err() != nil {
-		return &Error{Op: op, Err: contextErr(ctx)}
+		return &Error{Op: op, Err: ctx.Err()}
 	}
 	if started && isEOF(err) {
 		return nil
 	}
 	return &Error{Op: op, Err: err}
-}
-
-func contextErr(ctx context.Context) error {
-	if err := ctx.Err(); err != nil {
-		return err
-	}
-	return errors.New("context canceled")
 }
 
 func dial(ctx context.Context, addr string) (net.Conn, func() bool, error) {
@@ -373,11 +360,10 @@ func cString(pkt []byte, off int) string {
 	if off >= len(pkt) {
 		return ""
 	}
-	end := off
-	for end < len(pkt) && pkt[end] != 0 {
-		end++
+	if i := bytes.IndexByte(pkt[off:], 0); i >= 0 {
+		return string(pkt[off : off+i])
 	}
-	return string(pkt[off:end])
+	return string(pkt[off:])
 }
 
 func recordingIDs(pkt []byte) []string {
@@ -400,10 +386,7 @@ func recordingIDs(pkt []byte) []string {
 }
 
 func videoPayload(msg []byte) ([]byte, bool) {
-	if len(msg) < offPayload+4 {
-		return nil, false
-	}
-	if msg[offPayload] != 0 || msg[offPayload+1] != 0 || msg[offPayload+2] != 0 || msg[offPayload+3] != 1 {
+	if len(msg) < offPayload+4 || !bytes.Equal(msg[offPayload:offPayload+4], []byte{0, 0, 0, 1}) {
 		return nil, false
 	}
 	n := binary.LittleEndian.Uint32(msg[offPayloadN:])

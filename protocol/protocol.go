@@ -12,6 +12,7 @@ import (
 	"errors"
 	"fmt"
 	"strconv"
+	"strings"
 	"time"
 )
 
@@ -39,7 +40,6 @@ const (
 	offStatus    = 0x0B
 	offToken     = 0x30
 	offHandle    = 0x13C
-	offDevice    = 0x16C
 	offClaimTag  = 0xA0
 	offFrameTime = 0x30
 	offPayloadN  = 0x3C
@@ -60,7 +60,7 @@ type Recording struct {
 	End   time.Time
 }
 
-// Duration is End minus Start. It is zero when the name could not be parsed.
+// Duration is End minus Start. It is zero when End is before Start.
 func (r Recording) Duration() time.Duration {
 	if r.End.Before(r.Start) {
 		return 0
@@ -110,7 +110,7 @@ func LoginDigest(token, password string) string {
 // ParseRecording reads the start and end clock out of a qvfs file name.
 // The trailing twelve numbers are YY,M,D,h,m,s,YY,M,D,h,m,s.
 func ParseRecording(id string) (Recording, error) {
-	parts := splitUnderscore(id)
+	parts := strings.Split(id, "_")
 	if len(parts) < 13 || parts[0] != "qvfs" {
 		return Recording{}, fmt.Errorf("not a qvfs recording id")
 	}
@@ -135,24 +135,11 @@ func clockFrom(parts []string) (time.Time, error) {
 		}
 		n[i] = v
 	}
-	year := 2000 + n[0]
-	t := time.Date(year, time.Month(n[1]), n[2], n[3], n[4], n[5], 0, time.Local)
-	if t.Year() != year || int(t.Month()) != n[1] || t.Day() != n[2] {
+	t, ok := localClock(2000+n[0], n[1], n[2], n[3], n[4], n[5])
+	if !ok {
 		return time.Time{}, errors.New("clock fields are not a real date")
 	}
 	return t, nil
-}
-
-func splitUnderscore(s string) []string {
-	var parts []string
-	start := 0
-	for i := 0; i <= len(s); i++ {
-		if i == len(s) || s[i] == '_' {
-			parts = append(parts, s[start:i])
-			start = i + 1
-		}
-	}
-	return parts
 }
 
 func packClock(t time.Time) []byte {
@@ -170,12 +157,14 @@ func unpackClock(raw []byte) (time.Time, bool) {
 	if len(raw) < 8 {
 		return time.Time{}, false
 	}
-	year := int(binary.LittleEndian.Uint16(raw[0:2]))
-	month := int(binary.LittleEndian.Uint16(raw[2:4]))
-	day := int(raw[4])
-	hour := int(raw[5])
-	min := int(raw[6])
-	sec := int(raw[7])
+	return localClock(
+		int(binary.LittleEndian.Uint16(raw[0:2])),
+		int(binary.LittleEndian.Uint16(raw[2:4])),
+		int(raw[4]), int(raw[5]), int(raw[6]), int(raw[7]),
+	)
+}
+
+func localClock(year, month, day, hour, min, sec int) (time.Time, bool) {
 	t := time.Date(year, time.Month(month), day, hour, min, sec, 0, time.Local)
 	if t.Year() != year || int(t.Month()) != month || t.Day() != day {
 		return time.Time{}, false

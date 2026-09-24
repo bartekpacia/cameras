@@ -108,12 +108,11 @@ class DVR:
     def __exit__(self, *exc):
         self.close()
 
-    def _send(self, cmd: int, body: bytes, extra12: int = 0):
+    def _send(self, cmd: int, body: bytes):
         pkt = bytearray(0x14 + len(body))
         pkt[0:4] = MAGIC
         struct.pack_into("<I", pkt, 4, len(pkt))
         struct.pack_into("<I", pkt, 8, cmd)
-        struct.pack_into("<I", pkt, 0x0C, extra12)
         pkt[0x14:] = body
         self.sock.sendall(pkt)
 
@@ -127,13 +126,13 @@ class DVR:
         return hdr + self._recv_exact(total - 8)
 
     def _recv_exact(self, n: int) -> bytes:
-        data = b""
+        data = bytearray()
         while len(data) < n:
             chunk = self.sock.recv(n - len(data))
             if not chunk:
                 raise ConnectionError("DVR closed the connection")
-            data += chunk
-        return data
+            data.extend(chunk)
+        return bytes(data)
 
     def login(self, user: str, password: str) -> dict:
         body = bytearray(112 - 0x14)
@@ -181,7 +180,6 @@ class DVR:
         if status != 0:
             raise RuntimeError(f"search failed, status={status}")
         names = [m.decode("ascii") for m in re.findall(rb"qvfs_[0-9_]+", resp)]
-        # preserve order, drop accidental concatenations
         return names
 
     def download(self, name: str, out_path: str, stop_after: dt.datetime | None = None) -> int:
@@ -195,7 +193,6 @@ class DVR:
         media = DVR(self.host, self.port, self.timeout)
         media.connect()
         written = 0
-        video_frames = 0
         try:
             body = bytearray(384 - 0x14)
             struct.pack_into("<I", body, 0, self.handle)
@@ -239,7 +236,6 @@ class DVR:
                         started = True
                     out.write(payload)
                     written += len(payload)
-                    video_frames += 1
                     if stop_after is not None and len(msg) >= 0x38:
                         when = unpack_dt(msg[0x30:0x38])
                         if when is not None and when > stop_after:
@@ -255,7 +251,7 @@ class DVR:
                 pass
         finally:
             media.close()
-        if video_frames == 0:
+        if written == 0:
             raise RuntimeError(f"no video frames in {name}")
         return written
 

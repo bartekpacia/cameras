@@ -38,7 +38,10 @@ func main() {
 
 	loadDotEnv(".env")
 	if *host == "" {
-		*host = envOr("DVR_ADDRESS", "192.168.1.3")
+		*host = os.Getenv("DVR_ADDRESS")
+		if *host == "" {
+			*host = "192.168.1.3"
+		}
 	}
 	if *user == "" {
 		*user = os.Getenv("DVR_USER")
@@ -79,13 +82,6 @@ func main() {
 		log.Error("serve", "err", err)
 		os.Exit(1)
 	}
-}
-
-func envOr(key, fallback string) string {
-	if v := os.Getenv(key); v != "" {
-		return v
-	}
-	return fallback
 }
 
 // loadDotEnv sets unset variables from a KEY=VALUE file.
